@@ -15,7 +15,14 @@ import java.util.Collections
 import java.util.WeakHashMap
 import kotlin.coroutines.suspendCoroutine
 
-class LifecycleAwareAdaptAdapter<T : Any>(private val viewTypeMapper: ((T, Int) -> Int)?, private val defaultBinder: CollectingBindable<T, *>?, private val viewBinders: MutableMap<Int, CollectingBindable<T, *>>, private val itemEquals: (T, T) -> Boolean, private val itemContentEquals: (T, T) -> Boolean): AdaptAdapter<T>() {
+class LifecycleAwareAdaptAdapter<T : Any>(
+    private val viewTypeMapper: ((T, Int) -> Int)?,
+    private val defaultBinder: CollectingBindable<T, *>?,
+    private val viewBinders: MutableMap<Int, CollectingBindable<T, *>>,
+    private val itemEquals: (T, T) -> Boolean,
+    private val itemContentEquals: (T, T) -> Boolean,
+    private var searchFilter: Filter?,
+) : AdaptAdapter<T>() {
     private val knownAffectedViewHolders = Collections.newSetFromMap(WeakHashMap<LifecycleAwareAdaptViewHolder<T>, Boolean>())
     private val diffCallback: DiffUtil.ItemCallback<T> = object : DiffUtil.ItemCallback<T>() {
         override fun areItemsTheSame(oldItem: T, newItem: T): Boolean {
@@ -31,9 +38,7 @@ class LifecycleAwareAdaptAdapter<T : Any>(private val viewTypeMapper: ((T, Int) 
         get() = mDiffer.currentList
     private var fullList: MutableList<T> = mutableListOf()
 
-    override var searchFilterable: Filter? = null
-
-    override fun getFilter(): Filter = requireNotNull(searchFilterable) {
+    override fun getFilter(): Filter = requireNotNull(searchFilter) {
         "Filterable.Filter of $this accessed before assigning"
     }
 

@@ -1,6 +1,7 @@
 package io.github.vshnv.adapt.dsl.collector
 
 import android.view.ViewGroup
+import android.widget.Filter
 import io.github.vshnv.adapt.adapter.AdaptAdapter
 import io.github.vshnv.adapt.adapter.LifecycleAwareAdaptAdapter
 import io.github.vshnv.adapt.dsl.AdaptScope
@@ -13,6 +14,7 @@ internal class CollectingAdaptScope<T: Any>: AdaptScope<T> {
     private var viewTypeMapper: ((T, Int) -> Int)? = null
     private var defaultBinder:  CollectingBindable<T, *>? = null
     private val viewBinders: MutableMap<Int, CollectingBindable<T, *>> = mutableMapOf()
+    private var searchFilterable: Filter? = null
 
     override fun defineViewTypes(mapToViewType: (T, Int) -> Int) {
         viewTypeMapper = mapToViewType
@@ -32,7 +34,8 @@ internal class CollectingAdaptScope<T: Any>: AdaptScope<T> {
             defaultBinder,
             viewBinders,
             itemEquals,
-            itemContentEquals
+            itemContentEquals,
+            searchFilterable
         )
     }
 
@@ -49,5 +52,9 @@ internal class CollectingAdaptScope<T: Any>: AdaptScope<T> {
         return CollectingBindable<T, V>(createView).apply {
             viewBinders[viewType] = this
         }
+    }
+
+    override fun createFilter(searchFilter: Filter?) {
+        searchFilterable = searchFilter
     }
 }
