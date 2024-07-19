@@ -28,6 +28,10 @@ internal class CollectingAdaptScope<T: Any>: AdaptScope<T> {
         itemContentEquals = checkContentEquality
     }
 
+    override fun filter(searchFilter: Filter?) {
+        searchFilterable = searchFilter
+    }
+
     internal fun buildAdapter(): AdaptAdapter<T> {
         return LifecycleAwareAdaptAdapter<T>(
             viewTypeMapper,
@@ -52,9 +56,5 @@ internal class CollectingAdaptScope<T: Any>: AdaptScope<T> {
         return CollectingBindable<T, V>(createView).apply {
             viewBinders[viewType] = this
         }
-    }
-
-    override fun createFilter(searchFilter: Filter?) {
-        searchFilterable = searchFilter
     }
 }
