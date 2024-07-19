@@ -5,7 +5,7 @@ import androidx.recyclerview.widget.RecyclerView
 
 abstract class AdaptAdapter<T>: RecyclerView.Adapter<AdaptViewHolder<T>>(), Filterable {
     abstract val currentList: List<T>
-    abstract fun getFullData(): List<T>
+    abstract fun getUnfilteredList(): List<T>
 
     abstract suspend fun submitDataSuspending(data: List<T>): Unit
     abstract fun submitData(data: List<T>, callback: () -> Unit = {}): Unit

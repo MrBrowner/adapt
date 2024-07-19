@@ -36,13 +36,13 @@ class LifecycleAwareAdaptAdapter<T : Any>(
     private val mDiffer: AsyncListDiffer<T> = AsyncListDiffer(this, diffCallback)
     override val currentList: List<T>
         get() = mDiffer.currentList
-    private var fullList: MutableList<T> = mutableListOf()
+    private var unFilteredList: MutableList<T> = mutableListOf()
 
     override fun getFilter(): Filter = requireNotNull(searchFilter) {
         "Filterable.Filter of $this accessed before assigning"
     }
 
-    override fun getFullData(): List<T> = fullList
+    override fun getUnfilteredList(): List<T> = unFilteredList
 
     override fun getItemViewType(position: Int): Int {
         return viewTypeMapper?.let {
@@ -78,7 +78,7 @@ class LifecycleAwareAdaptAdapter<T : Any>(
     }
 
     override suspend fun submitDataSuspending(data: List<T>) {
-        fullList = data.toMutableList()
+        unFilteredList = data.toMutableList()
         suspendCoroutine<Unit> { continuation ->
             mDiffer.submitList(data) {
                 continuation.resumeWith(Result.success(Unit))
@@ -87,7 +87,7 @@ class LifecycleAwareAdaptAdapter<T : Any>(
     }
 
     override fun submitData(data: List<T>, callback: () -> Unit) {
-        fullList = data.toMutableList()
+        unFilteredList = data.toMutableList()
         mDiffer.submitList(data, callback)
     }
 
