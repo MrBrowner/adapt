@@ -5,12 +5,12 @@ import android.view.ViewGroup
 import android.widget.Filter
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ViewTreeLifecycleOwner
 import androidx.recyclerview.widget.AsyncListDiffer
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
 import androidx.recyclerview.widget.RecyclerView.ViewHolder
 import io.github.vshnv.adapt.dsl.collector.CollectingBindable
-import io.github.vshnv.adapt.extensions.findViewTreeLifecycleOwner
 import java.util.Collections
 import java.util.WeakHashMap
 import kotlin.coroutines.suspendCoroutine
@@ -105,7 +105,7 @@ class LifecycleAwareAdaptAdapter<T : Any>(
     override fun onViewAttachedToWindow(holder: AdaptViewHolder<T>) {
         super.onViewAttachedToWindow(holder)
         val holder = (holder as LifecycleAwareAdaptViewHolder<T>)
-        val lifecycleOwner = holder.itemView.findViewTreeLifecycleOwner() ?: return
+        val lifecycleOwner = ViewTreeLifecycleOwner.get(holder.itemView) ?: return
         holder.handleLifecycleSetup(lifecycleOwner)
         val registry = holder.lifecycleRegistry
         registry?.highestState = Lifecycle.State.RESUMED
