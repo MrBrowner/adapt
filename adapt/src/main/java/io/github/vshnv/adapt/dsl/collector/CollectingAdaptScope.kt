@@ -32,16 +32,6 @@ internal class CollectingAdaptScope<T : Any> : AdaptScope<T> {
         searchFilterable = searchFilter
     }
 
-    internal fun buildAdapter(): AdaptAdapter<T> {
-        return LifecycleAwareAdaptAdapter<T>(
-            viewTypeMapper,
-            defaultBinder,
-            viewBinders,
-            itemEquals,
-            itemContentEquals,
-            searchFilterable
-        )
-    }
 
     override fun <V : Any> create(createView: (parent: ViewGroup) -> ViewSource<V>): Bindable<T, V> {
         return CollectingBindable<T, V>(createView).apply {
@@ -56,5 +46,16 @@ internal class CollectingAdaptScope<T : Any> : AdaptScope<T> {
         return CollectingBindable<T, V>(createView).apply {
             viewBinders[viewType] = this
         }
+    }
+
+    internal fun buildAdapter(): AdaptAdapter<T> {
+        return LifecycleAwareAdaptAdapter<T>(
+            viewTypeMapper,
+            defaultBinder,
+            viewBinders,
+            itemEquals,
+            itemContentEquals,
+            searchFilterable
+        )
     }
 }
