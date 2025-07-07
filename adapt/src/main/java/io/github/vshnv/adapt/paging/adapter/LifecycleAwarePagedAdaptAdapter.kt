@@ -29,6 +29,7 @@ class LifecycleAwarePagedAdaptAdapter<T : Any>(
 ) : PagedAdaptAdapter<T, LifecycleAwarePagedAdaptViewHolder<T>>(diffCallback) {
 
     // Keep track of active ViewHolders to notify them when RecyclerView is detached
+    // knownAffectedViewHolders might be redundant if LifecycleAwarePagedAdaptViewHolder manages its own lifecycle correctly.
     private val knownAffectedViewHolders =
         Collections.newSetFromMap(WeakHashMap<LifecycleAwarePagedAdaptViewHolder<T>, Boolean>())
 
@@ -72,23 +73,22 @@ class LifecycleAwarePagedAdaptAdapter<T : Any>(
         // Return a new LifecycleAwarePagedAdaptViewHolder
         return LifecycleAwarePagedAdaptViewHolder<T>(
             viewSource.view,
-            // Lambda to attach lifecycle observers
-            { viewHolder, lifecycleOwner ->
+            attachLifecycle = { viewHolder, lifecycleOwner ->
                 binderItem.lifecycleRenewAttachable?.attach?.invoke(
                     viewHolder,
-                    getItem(viewHolder.bindingAdapterPosition),
+                    getItem(viewHolder.bindingAdapterPosition)!!, // todo("// ?")
                     viewSource,
                     lifecycleOwner
                 )
-            }) { viewHolder, _, data ->
-            // Lambda to bind data to the view
-            val bindDataToView =
-                binderItem.bindDataToView ?: return@LifecycleAwarePagedAdaptViewHolder
-            // Only bind if data is not null (i.e., not a placeholder)
-            data?.let {
-                bindDataToView(viewHolder, it, viewSource)
-            }
-        }
+            }, bindRaw = { viewHolder, _, data ->
+                // Lambda to bind data to the view
+                val bindDataToView =
+                    binderItem.bindDataToView ?: return@LifecycleAwarePagedAdaptViewHolder
+                // Only bind if data is not null (i.e., not a placeholder)
+                data?.let {
+                    bindDataToView(viewHolder, it, viewSource)
+                }
+            })
     }
 
     /**
@@ -105,11 +105,17 @@ class LifecycleAwarePagedAdaptAdapter<T : Any>(
 
     /**
      * Called when the RecyclerView is detached from the window.
-     * Notifies all known active ViewHolders that they are detached, destroying their lifecycles.
-     * @param recyclerView The RecyclerView that was detached.
+     * This should trigger destruction of all active ViewHolder lifecycles.
+     * This is typically handled by the RecyclerView itself or by the
+     * LifecycleAwarePagedAdaptViewHolder's own lifecycle management when it's detached.
      */
     override fun onDetachedFromRecyclerView(recyclerView: RecyclerView) {
         super.onDetachedFromRecyclerView(recyclerView)
+        // If LifecycleAwarePagedAdaptViewHolder properly destroys its lifecycle
+        // in onViewDetachedFromWindow, this might not need specific action here.
+        // If you had any adapter-level observers for the RecyclerView's lifecycle,
+        // you would remove them here.
+
         // Iterate through all known ViewHolders and notify them of detachment
         knownAffectedViewHolders.filterNotNull().forEach { viewHolder ->
             viewHolder.notifyDetached(recyclerView)
@@ -125,7 +131,10 @@ class LifecycleAwarePagedAdaptAdapter<T : Any>(
         super.onViewAttachedToWindow(holder)
         // Retrieve the lifecycle owner from the view tree
         val lifecycleOwner = ViewTreeLifecycleOwner.get(holder.itemView) ?: return
-        // Handle the lifecycle setup for the ViewHolder
+        // You still need to retrieve the parent lifecycle owner, as the ViewHolder's
+        // lifecycle often needs to be in sync with its parent (e.g., the Fragment/Activity).
+        // However, the ViewHolder itself acts as the LifecycleOwner for its observers.
+//        holder.attachToLifecycle(lifecycleOwner)
         holder.handleLifecycleSetup(lifecycleOwner)
         // Set the highest state for the ViewHolder's lifecycle registry to RESUMED
         holder.lifecycleRegistry?.highestState = Lifecycle.State.RESUMED
@@ -135,7 +144,8 @@ class LifecycleAwarePagedAdaptAdapter<T : Any>(
 
     /**
      * Called when a ViewHolder is detached from the window.
-     * This is where the ViewHolder's lifecycle state is set to CREATED.
+     * This is where the ViewHolder's lifecycle state is set to CREATED or DESTROYED
+     * depending on whether it's being recycled or permanently removed.
      * @param holder The [PagedAdaptViewHolder] that was detached.
      */
     override fun onViewDetachedFromWindow(holder: LifecycleAwarePagedAdaptViewHolder<T>) {
