@@ -6,7 +6,7 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import java.lang.ref.WeakReference
 
-class AdapterLifecycleRegistry(owner: LifecycleOwner, private val parentLifecycle: Lifecycle): LifecycleRegistry(owner) {
+class AdapterLifecycleRegistry(owner: LifecycleOwner, private val parentLifecycle: Lifecycle) : LifecycleRegistry(owner) {
     private val ownerWeakRef = WeakReference(owner)
     private val parentLifecycleObserver = LifecycleEventObserver { _, _ ->
         if (ownerWeakRef.get() == null) {
@@ -26,6 +26,7 @@ class AdapterLifecycleRegistry(owner: LifecycleOwner, private val parentLifecycl
                 }
             }
         }
+
     init {
         val currentParentState = parentLifecycle.currentState
         if (currentParentState > State.INITIALIZED) {
@@ -34,12 +35,15 @@ class AdapterLifecycleRegistry(owner: LifecycleOwner, private val parentLifecycl
         }
         observeParent()
     }
+
     private fun observeParent() {
         parentLifecycle.addObserver(parentLifecycleObserver)
     }
+
     private fun ignoreParent() {
         parentLifecycle.removeObserver(parentLifecycleObserver)
     }
+
     override fun setCurrentState(nextState: State) {
         val maxNextState = if (nextState > highestState)
             highestState else nextState
