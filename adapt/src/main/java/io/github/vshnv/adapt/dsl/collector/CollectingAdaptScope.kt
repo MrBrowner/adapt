@@ -51,22 +51,26 @@ internal class CollectingAdaptScope<T : Any> : AdaptScope<T> {
     /**
      * Creates a default view binder for the adapter.
      */
-    override fun <V : Any> create(createView: (parent: ViewGroup) -> ViewSource<V>): Bindable<T, V> {
-        return CollectingBindable<T, V>(createView).apply {
-            defaultBinder = this
-        }
+    override fun <V : Any> create(
+        createView: (ViewGroup) -> ViewSource<V>,
+        viewType: Class<V>,
+    ): Bindable<T, V> {
+        val binder = CollectingBindable<T, V>(createView, viewType)
+        defaultBinder = binder
+        return binder
     }
 
     /**
      * Creates a view binder for a specific view type.
      */
     override fun <V : Any> create(
-        viewType: Int,
+        viewTypeInt: Int,
         createView: (parent: ViewGroup) -> ViewSource<V>,
+        viewType: Class<V>,
     ): Bindable<T, V> {
-        return CollectingBindable<T, V>(createView).apply {
-            viewBinders[viewType] = this
-        }
+        val binder = CollectingBindable<T, V>(createView, viewType)
+        viewBinders[viewTypeInt] = binder
+        return binder
     }
 
     /**
