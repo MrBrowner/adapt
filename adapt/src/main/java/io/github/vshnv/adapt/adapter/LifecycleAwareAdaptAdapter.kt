@@ -113,13 +113,13 @@ class LifecycleAwareAdaptAdapter<T : Any>(
         val lifecycleOwner = ViewTreeLifecycleOwner.get(holder.itemView) ?: return
         holder.handleLifecycleSetup(lifecycleOwner)
         val registry = holder.lifecycleRegistry
-        registry?.highestState = Lifecycle.State.RESUMED
+        registry?.highestPermittedState = Lifecycle.State.RESUMED
         knownAffectedViewHolders.add(holder)
     }
 
     override fun onViewDetachedFromWindow(holder: AdaptViewHolder<T>) {
         val registry = (holder as LifecycleAwareAdaptViewHolder<T>).lifecycleRegistry
-        registry?.highestState = Lifecycle.State.CREATED
+        registry?.highestPermittedState = Lifecycle.State.CREATED
         super.onViewDetachedFromWindow(holder)
     }
 
@@ -133,7 +133,9 @@ class LifecycleAwareAdaptAdapter<T : Any>(
         private var lastLifecycleOwner: LifecycleOwner? = null
         var lifecycleRegistry: AdapterLifecycleRegistry? = null
             private set
-        override fun getLifecycle(): Lifecycle = requireNotNull(lifecycleRegistry) {"LifeCycle of $this accessed before attempting bind"}
+
+        override fun getLifecycle(): Lifecycle =
+            requireNotNull(lifecycleRegistry) { "LifeCycle of $this accessed before attempting bind" }
 
         override fun bind(idx: Int, data: T) {
             if (lastData != data && lastLifecycleOwner != null) {
@@ -167,6 +169,7 @@ class LifecycleAwareAdaptAdapter<T : Any>(
             lifecycleRegistry = AdapterLifecycleRegistry(this, lifecycleOwner.lifecycle)
             attachLifecycle(this, this)
         }
+
         private fun View.findClosestRecyclerView(): RecyclerView? {
             return when (this) {
                 is RecyclerView -> this
