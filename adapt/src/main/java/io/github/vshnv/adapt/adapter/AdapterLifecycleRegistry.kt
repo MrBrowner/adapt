@@ -7,8 +7,10 @@ import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import java.lang.ref.WeakReference
 
-// This class should ideally be named something like CompositeLifecycleOwner or
-// ViewHolderLifecycleOwner, as it provides a Lifecycle for its owner.
+/**
+ * Provides a Lifecycle for a RecyclerView ViewHolder or similar component, synchronized with a parent Lifecycle.
+ * Manages the internal lifecycle state and allows for attach, detach, and destroy operations.
+ */
 class AdapterLifecycleRegistry(
     owner: LifecycleOwner, private val parentLifecycle: Lifecycle
 ) : Lifecycle() {

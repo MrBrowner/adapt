@@ -8,6 +8,10 @@ import io.github.vshnv.adapt.dsl.AdaptScope
 import io.github.vshnv.adapt.dsl.Bindable
 import io.github.vshnv.adapt.dsl.ViewSource
 
+/**
+ * Collects configuration for an Adapt adapter, including view types, binders, and filters.
+ * Ensures all required properties are set before building the adapter.
+ */
 internal class CollectingAdaptScope<T : Any> : AdaptScope<T> {
     private var itemEquals: (T, T) -> Boolean = { a, b -> a == b }
     private var itemContentEquals: (T, T) -> Boolean = { a, b -> a == b }
@@ -16,29 +20,46 @@ internal class CollectingAdaptScope<T : Any> : AdaptScope<T> {
     private val viewBinders: MutableMap<Int, CollectingBindable<T, *>> = mutableMapOf()
     private var searchFilterable: Filter? = null
 
+    /**
+     * Defines how to map an item and its position to a view type integer.
+     */
     override fun defineViewTypes(mapToViewType: (T, Int) -> Int) {
         viewTypeMapper = mapToViewType
     }
 
+    /**
+     * Sets the function to check if two items are the same.
+     */
     override fun itemEquals(checkEquality: (T, T) -> Boolean) {
         itemEquals = checkEquality
     }
 
+    /**
+     * Sets the function to check if two items' contents are the same.
+     */
     override fun contentEquals(checkContentEquality: (T, T) -> Boolean) {
         itemContentEquals = checkContentEquality
     }
 
+    /**
+     * Sets the filter to be used for searching/filtering items.
+     */
     override fun filter(searchFilter: Filter?) {
         searchFilterable = searchFilter
     }
 
-
+    /**
+     * Creates a default view binder for the adapter.
+     */
     override fun <V : Any> create(createView: (parent: ViewGroup) -> ViewSource<V>): Bindable<T, V> {
         return CollectingBindable<T, V>(createView).apply {
             defaultBinder = this
         }
     }
 
+    /**
+     * Creates a view binder for a specific view type.
+     */
     override fun <V : Any> create(
         viewType: Int,
         createView: (parent: ViewGroup) -> ViewSource<V>,
@@ -48,10 +69,23 @@ internal class CollectingAdaptScope<T : Any> : AdaptScope<T> {
         }
     }
 
+    /**
+     * Builds the [AdaptAdapter] using the collected configuration.
+     * @throws IllegalStateException if required properties are missing.
+     */
     internal fun buildAdapter(): AdaptAdapter<T> {
+        val binder = requireNotNull(defaultBinder) {
+            "No default binder defined. Call create() to define a default view binder before building the adapter."
+        }
+        // If multiple view types are used, viewTypeMapper must be set
+        if (viewBinders.isNotEmpty()) {
+            requireNotNull(viewTypeMapper) {
+                "Multiple view types defined but no viewTypeMapper provided. Call defineViewTypes() to map items to view types."
+            }
+        }
         return LifecycleAwareAdaptAdapter<T>(
             viewTypeMapper,
-            defaultBinder,
+            binder,
             viewBinders,
             itemEquals,
             itemContentEquals,
