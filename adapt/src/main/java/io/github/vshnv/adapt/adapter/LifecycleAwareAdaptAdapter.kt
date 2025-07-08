@@ -54,14 +54,19 @@ class LifecycleAwareAdaptAdapter<T : Any>(
         val binderItem: CollectingBindable<T, *> = viewBinders[viewType] ?: defaultBinder
         ?: throw AssertionError("Adapt found ViewType with no bound view creator or any default view creator, Cannot proceed!")
         val viewSource = binderItem.creator(parent)
-        return LifecycleAwareAdaptViewHolder<T>(viewSource.view,
-            { viewHolder, lifecycleOwner ->
-                binderItem.lifecycleRenewAttachable?.attach?.invoke(viewHolder,
-                    currentList[viewHolder.adapterPosition], viewSource, lifecycleOwner)
-            }) { viewHolder, _, data ->
-            val bindDataToView = binderItem.bindDataToView ?: return@LifecycleAwareAdaptViewHolder
-            bindDataToView(viewHolder, data, viewSource)
-        }
+        return LifecycleAwareAdaptViewHolder<T>(
+            viewSource.view,
+            attachLifecycle = { viewHolder, lifecycleOwner ->
+                binderItem.lifecycleRenewAttachable?.attach?.invoke(
+                    viewHolder,
+                    currentList[viewHolder.bindingAdapterPosition], viewSource, lifecycleOwner
+                )
+            },
+            bindRaw = { viewHolder, _, data ->
+                val bindDataToView =
+                    binderItem.bindDataToView ?: return@LifecycleAwareAdaptViewHolder
+                bindDataToView(viewHolder, data, viewSource)
+            })
     }
 
     override fun getItemCount(): Int {
@@ -118,7 +123,11 @@ class LifecycleAwareAdaptAdapter<T : Any>(
         super.onViewDetachedFromWindow(holder)
     }
 
-    class LifecycleAwareAdaptViewHolder<T>(view: View, private val attachLifecycle: (ViewHolder, LifecycleOwner) -> Unit, private val bindRaw: (LifecycleAwareAdaptViewHolder<T>, Int, T) -> Unit): AdaptViewHolder<T>(view), LifecycleOwner {
+    class LifecycleAwareAdaptViewHolder<T>(
+        view: View,
+        private val attachLifecycle: (ViewHolder, LifecycleOwner) -> Unit,
+        private val bindRaw: (LifecycleAwareAdaptViewHolder<T>, Int, T) -> Unit,
+    ) : AdaptViewHolder<T>(view), LifecycleOwner {
         private var lastData: T? = null
         private var lastAttachedRecyclerView: RecyclerView? = null
         private var lastLifecycleOwner: LifecycleOwner? = null

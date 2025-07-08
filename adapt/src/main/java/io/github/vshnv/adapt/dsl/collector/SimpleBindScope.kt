@@ -9,5 +9,5 @@ data class SimpleBindScope<T, V>(
     override val viewHolder: RecyclerView.ViewHolder
 ) : BindScope<T, V> {
     override val index: Int
-        get() = viewHolder.adapterPosition
+        get() = viewHolder.bindingAdapterPosition
 }
