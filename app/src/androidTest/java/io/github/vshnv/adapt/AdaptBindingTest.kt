@@ -29,9 +29,9 @@ import io.github.vshnv.adapt.dsl.adapt
 import org.hamcrest.CoreMatchers.`is`
 import org.hamcrest.Description
 import org.hamcrest.Matcher
+import org.hamcrest.TypeSafeMatcher
 import org.junit.Rule
 import org.junit.Test
-import org.junit.internal.matchers.TypeSafeMatcher
 import org.junit.runner.RunWith
 
 
@@ -51,9 +51,17 @@ class AdaptBindingTest {
             override fun perform(uiController: UiController?, view: View?) {
                 val recyclerView = view as RecyclerView
                 recyclerView.adapter = adapt<String> {
-                    create {
-                        ViewSource.BindingViewSource(LayoutTextItemBinding.inflate(LayoutInflater.from(view.context)), ViewBinding::getRoot)
-                    }.bind {
+                    create(
+                        createView = { parent: ViewGroup -> // Explicitly define parent type for clarity
+                            // Inflate your ViewBinding here.
+                            // Note: inflate usually takes a parent and attachToParent boolean.
+                            // If you're attaching it later, pass false.
+                            ViewSource.BindingViewSource(
+                                LayoutTextItemBinding.inflate(LayoutInflater.from(parent.context), parent, false)
+                            )
+                        },
+                        viewType = LayoutTextItemBinding::class.java
+                    ).bind {
                         binding.tvTest.text = data
                     }
                 }
@@ -70,9 +78,15 @@ class AdaptBindingTest {
             val recyclerView = activity.findViewById<RecyclerView>(R.id.rv_test)
             recyclerView.layoutManager = LinearLayoutManager(activity)
             val adapter = adapt<String> {
-                create {
-                    ViewSource.BindingViewSource(LayoutTextItemBinding.inflate(LayoutInflater.from(activity)), ViewBinding::getRoot)
-                }.bind {
+                create(
+                    createView = { parent: ViewGroup ->
+                        // If you're attaching it later, pass false.
+                        ViewSource.BindingViewSource(
+                            LayoutTextItemBinding.inflate(LayoutInflater.from(parent.context), parent, false)
+                        )
+                    },
+                    viewType = LayoutTextItemBinding::class.java
+                ).bind {
                     binding.tvTest.text = data
                 }
             }
@@ -100,9 +114,15 @@ class AdaptBindingTest {
             recyclerView.layoutManager = LinearLayoutManager(activity)
             var count = 0
             val adapter = adapt<String> {
-                create {
-                    ViewSource.BindingViewSource(LayoutTextItemBinding.inflate(LayoutInflater.from(activity)), ViewBinding::getRoot)
-                }.bind {
+                create(
+                    createView = { parent: ViewGroup ->
+                        // If you're attaching it later, pass false.
+                        ViewSource.BindingViewSource(
+                            LayoutTextItemBinding.inflate(LayoutInflater.from(parent.context), parent, false)
+                        )
+                    },
+                    viewType = LayoutTextItemBinding::class.java
+                ).bind {
                     binding.tvTest.text = data
                 }.withLifecycle {
                     binding.tvTest.tag = "Lifecycle Bound"
@@ -132,9 +152,15 @@ class AdaptBindingTest {
             recyclerView.layoutManager = LinearLayoutManager(activity)
             var count = 0
             val adapter = adapt<String> {
-                create {
-                    ViewSource.BindingViewSource(LayoutTextItemBinding.inflate(LayoutInflater.from(activity)), ViewBinding::getRoot)
-                }.bind {
+                create(
+                    createView = { parent: ViewGroup ->
+                        // If you're attaching it later, pass false.
+                        ViewSource.BindingViewSource(
+                            LayoutTextItemBinding.inflate(LayoutInflater.from(parent.context), parent, false)
+                        )
+                    },
+                    viewType = LayoutTextItemBinding::class.java
+                ).bind {
                     binding.tvTest.text = data
                 }.withLifecycle {
                     it.lifecycle.addObserver(object : LifecycleEventObserver {
