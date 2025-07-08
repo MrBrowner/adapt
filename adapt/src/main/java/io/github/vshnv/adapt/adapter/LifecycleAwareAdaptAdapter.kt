@@ -11,9 +11,11 @@ import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.RecyclerView
 import androidx.recyclerview.widget.RecyclerView.ViewHolder
 import io.github.vshnv.adapt.dsl.collector.CollectingBindable
-import java.util.Collections
-import java.util.WeakHashMap
 import kotlin.coroutines.suspendCoroutine
+
+// Ensure AdapterLifecycleRegistry is correctly defined as provided in the previous turn
+// and that it now has attach(), detach(), and destroy() methods.
+// Also ensure your AdaptViewHolder is open so LifecycleAwareAdaptViewHolder can extend it.
 
 class LifecycleAwareAdaptAdapter<T : Any>(
     private val viewTypeMapper: ((T, Int) -> Int)?,
@@ -23,7 +25,11 @@ class LifecycleAwareAdaptAdapter<T : Any>(
     private val itemContentEquals: (T, T) -> Boolean,
     private var searchFilter: Filter?,
 ) : AdaptAdapter<T>() {
-    private val knownAffectedViewHolders = Collections.newSetFromMap(WeakHashMap<LifecycleAwareAdaptViewHolder<T>, Boolean>())
+
+    // knownAffectedViewHolders can likely be removed as AdapterLifecycleRegistry
+    // and its integration with onViewAttached/Detached should handle it.
+    // private val knownAffectedViewHolders = Collections.newSetFromMap(WeakHashMap<LifecycleAwareAdaptViewHolder<T>, Boolean>())
+
     private val diffCallback: DiffUtil.ItemCallback<T> = object : DiffUtil.ItemCallback<T>() {
         override fun areItemsTheSame(oldItem: T, newItem: T): Boolean {
             return itemEquals(oldItem, newItem)
@@ -54,19 +60,25 @@ class LifecycleAwareAdaptAdapter<T : Any>(
         val binderItem: CollectingBindable<T, *> = viewBinders[viewType] ?: defaultBinder
         ?: throw AssertionError("Adapt found ViewType with no bound view creator or any default view creator, Cannot proceed!")
         val viewSource = binderItem.creator(parent)
+
         return LifecycleAwareAdaptViewHolder<T>(
             viewSource.view,
-            attachLifecycle = { viewHolder, lifecycleOwner ->
+            // Pass the binder's attach lambda to the ViewHolder
+            attachLifecycle = { viewHolder, lifecycleOwnerForAttach ->
                 binderItem.lifecycleRenewAttachable?.attach?.invoke(
                     viewHolder,
-                    currentList[viewHolder.bindingAdapterPosition], viewSource, lifecycleOwner
+                    currentList[viewHolder.bindingAdapterPosition],
+                    viewSource,
+                    lifecycleOwnerForAttach // This is the AdapterLifecycleRegistry instance itself
                 )
             },
+            // Pass the binder's bind lambda to the ViewHolder
             bindRaw = { viewHolder, _, data ->
                 val bindDataToView =
                     binderItem.bindDataToView ?: return@LifecycleAwareAdaptViewHolder
                 bindDataToView(viewHolder, data, viewSource)
-            })
+            }
+        )
     }
 
     override fun getItemCount(): Int {
@@ -74,8 +86,8 @@ class LifecycleAwareAdaptAdapter<T : Any>(
     }
 
     override fun onBindViewHolder(holder: AdaptViewHolder<T>, position: Int) {
-        val data = getItem(position)
-        holder.bind(position, data)
+        // Ensure the holder is the correct type
+        (holder as? LifecycleAwareAdaptViewHolder<T>)?.bind(position, getItem(position))
     }
 
     private fun getItem(position: Int): T {
@@ -102,74 +114,112 @@ class LifecycleAwareAdaptAdapter<T : Any>(
 
     override fun onDetachedFromRecyclerView(recyclerView: RecyclerView) {
         super.onDetachedFromRecyclerView(recyclerView)
-        knownAffectedViewHolders.filterNotNull().forEach { viewHolder ->
-            viewHolder.notifyDetached(recyclerView)
-        }
+        // No longer iterate knownAffectedViewHolders here.
+        // onViewRecycled and onViewDetachedFromWindow handle individual holder lifecycles.
+        // If there were any adapter-level observers for RecyclerView's lifecycle, they would be removed here.
     }
 
     override fun onViewAttachedToWindow(holder: AdaptViewHolder<T>) {
         super.onViewAttachedToWindow(holder)
-        val holder = (holder as LifecycleAwareAdaptViewHolder<T>)
-        val lifecycleOwner = ViewTreeLifecycleOwner.get(holder.itemView) ?: return
-        holder.handleLifecycleSetup(lifecycleOwner)
-        val registry = holder.lifecycleRegistry
-        registry?.highestPermittedState = Lifecycle.State.RESUMED
-        knownAffectedViewHolders.add(holder)
+        val lifecycleAwareHolder = holder as LifecycleAwareAdaptViewHolder<T>
+        val parentLifecycleOwner = ViewTreeLifecycleOwner.get(lifecycleAwareHolder.itemView) ?: return
+
+        // Initialize and attach the AdapterLifecycleRegistry
+        lifecycleAwareHolder.handleLifecycleSetup(parentLifecycleOwner)
+        lifecycleAwareHolder.lifecycleRegistry?.attach() // Call attach() to move to RESUMED
+        // knownAffectedViewHolders is likely redundant and can be removed
+        // knownAffectedViewHolders.add(lifecycleAwareHolder)
     }
 
     override fun onViewDetachedFromWindow(holder: AdaptViewHolder<T>) {
-        val registry = (holder as LifecycleAwareAdaptViewHolder<T>).lifecycleRegistry
-        registry?.highestPermittedState = Lifecycle.State.CREATED
         super.onViewDetachedFromWindow(holder)
+        val lifecycleAwareHolder = holder as LifecycleAwareAdaptViewHolder<T>
+
+        // Detach the AdapterLifecycleRegistry
+        lifecycleAwareHolder.lifecycleRegistry?.detach() // Call detach() to move to CREATED/STOPPED
     }
+
+    // Crucial for proper lifecycle cleanup when ViewHolder is truly recycled
+    override fun onViewRecycled(holder: AdaptViewHolder<T>) {
+        super.onViewRecycled(holder)
+        val lifecycleAwareHolder = holder as LifecycleAwareAdaptViewHolder<T>
+
+        // Destroy the AdapterLifecycleRegistry
+        lifecycleAwareHolder.lifecycleRegistry?.destroy() // Call destroy() to clean up
+        lifecycleAwareHolder.lifecycleRegistry = null // Clear reference
+    }
+
 
     class LifecycleAwareAdaptViewHolder<T>(
         view: View,
+        // The attachLifecycle lambda now expects the AdapterLifecycleRegistry (which is a LifecycleOwner)
         private val attachLifecycle: (ViewHolder, LifecycleOwner) -> Unit,
         private val bindRaw: (LifecycleAwareAdaptViewHolder<T>, Int, T) -> Unit,
     ) : AdaptViewHolder<T>(view), LifecycleOwner {
-        private var lastData: T? = null
-        private var lastAttachedRecyclerView: RecyclerView? = null
-        private var lastLifecycleOwner: LifecycleOwner? = null
-        var lifecycleRegistry: AdapterLifecycleRegistry? = null
-            private set
 
+        private var lastData: T? = null // For data-driven lifecycle renewal
+        private var lastParentLifecycleOwner: LifecycleOwner? = null // The Activity/Fragment's LifecycleOwner
+        var lifecycleRegistry: AdapterLifecycleRegistry? = null
+
+        // LifecycleOwner implementation
         override fun getLifecycle(): Lifecycle =
-            requireNotNull(lifecycleRegistry) { "LifeCycle of $this accessed before attempting bind" }
+            requireNotNull(lifecycleRegistry) { "Lifecycle of $this accessed before it was initialized." }
 
         override fun bind(idx: Int, data: T) {
-            if (lastData != data && lastLifecycleOwner != null) {
-                renewLifecycleRegistry(lastLifecycleOwner!!)
+            // Only renew if data is actually different and a lifecycleOwner exists.
+            // This prevents unnecessary lifecycle renewals on every re-bind with same data.
+            if (lastData != data && lastParentLifecycleOwner != null) {
+                // If data changes, renew the registry
+                renewLifecycleRegistry(lastParentLifecycleOwner!!)
             }
             bindRaw(this, idx, data)
             lastData = data
         }
 
-        fun handleLifecycleSetup(lifecycleOwner: LifecycleOwner) {
-            if (lastLifecycleOwner == lifecycleOwner) {
-                return
+        // Sets up or renews the AdapterLifecycleRegistry, linking it to the parent LifecycleOwner
+        fun handleLifecycleSetup(parentLifecycleOwner: LifecycleOwner) {
+            // Only setup/renew if the parent LifecycleOwner has changed, or if registry is null
+            if (lastParentLifecycleOwner == parentLifecycleOwner && lifecycleRegistry != null) {
+                return // Already set up for this parent
             }
-            lastLifecycleOwner = lifecycleOwner
-            lastAttachedRecyclerView = itemView.findClosestRecyclerView()
-            renewLifecycleRegistry(lifecycleOwner)
+            lastParentLifecycleOwner = parentLifecycleOwner
+            renewLifecycleRegistry(parentLifecycleOwner) // Create/renew registry
         }
 
-        fun notifyDetached(recyclerView: RecyclerView) {
-            if (lastAttachedRecyclerView != recyclerView) {
-                return
-            }
+        // Renews the AdapterLifecycleRegistry, effectively restarting the ViewHolder's lifecycle
+        private fun renewLifecycleRegistry(parentLifecycleOwner: LifecycleOwner) {
+            // Destroy the old registry first if it exists
             lifecycleRegistry?.destroy()
-            lifecycleRegistry = null
-            lastLifecycleOwner = null
-            lastAttachedRecyclerView = null
-        }
-
-        private fun renewLifecycleRegistry(lifecycleOwner: LifecycleOwner) {
-            lifecycleRegistry?.destroy()
-            lifecycleRegistry = AdapterLifecycleRegistry(this, lifecycleOwner.lifecycle)
+            // Create a new AdapterLifecycleRegistry, passing itself (this ViewHolder) as the owner
+            // and the parent's lifecycle for synchronization.
+            lifecycleRegistry = AdapterLifecycleRegistry(this, parentLifecycleOwner.lifecycle)
+            // Call the attachLifecycle lambda provided by the adapter,
+            // passing this ViewHolder (which is the LifecycleOwner)
             attachLifecycle(this, this)
         }
 
+        // This method is no longer needed here as onViewRecycled handles destruction
+        // If notifyDetached was for RecyclerView removal, onDetachedFromRecyclerView handles that globally.
+        // Individual ViewHolder detachment should be handled by onViewDetachedFromWindow.
+        // Leaving it commented out for reference, but it should be removed.
+        /*
+        fun notifyDetached(recyclerView: RecyclerView) {
+            // This logic is better handled by onViewDetachedFromWindow and onViewRecycled
+            // as it directly relates to the ViewHolder's state in the RecyclerView.
+            // However, if you really need to react to a RecyclerView's detachment for a specific ViewHolder,
+            // ensure lastAttachedRecyclerView is properly set and lifecycleRegistry is not null.
+            // Current implementation of findClosestRecyclerView is also very broad.
+            if (itemView.findClosestRecyclerView() != recyclerView) { // Check if this ViewHolder belongs to the detached RV
+                 return
+            }
+            // lifecycleRegistry?.destroy() is typically called in onViewRecycled
+            // lifecycleRegistry = null; lastLifecycleOwner = null; lastAttachedRecyclerView = null;
+        }
+        */
+
+        // findClosestRecyclerView is typically not needed for lifecycle management.
+        // ViewTreeLifecycleOwner.get(itemView) is the standard for getting the correct LifecycleOwner.
+        // This method can likely be removed.
         private fun View.findClosestRecyclerView(): RecyclerView? {
             return when (this) {
                 is RecyclerView -> this

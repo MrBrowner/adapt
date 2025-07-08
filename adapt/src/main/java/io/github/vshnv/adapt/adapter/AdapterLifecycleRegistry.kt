@@ -22,7 +22,7 @@ class AdapterLifecycleRegistry(
     private val ownerWeakRef = WeakReference(owner)
 
     // Observer for the parent lifecycle
-    private val parentLifecycleObserver = LifecycleEventObserver { source, event ->
+    private val parentLifecycleObserver = LifecycleEventObserver { _, event -> // source parameter is not used, so can be omitted
         val currentOwner = ownerWeakRef.get()
         if (currentOwner == null) {
             // Owner is gone, stop observing parent
@@ -41,27 +41,23 @@ class AdapterLifecycleRegistry(
     var highestPermittedState: State = State.INITIALIZED
         set(value) {
             field = value
-            // When highestPermittedState is set, ensure the internal registry
-            // doesn't exceed this state.
-            // This is complex to manage perfectly with handleLifecycleEvent,
-            // as handleLifecycleEvent pushes state forward.
-            // A more direct approach is needed to *pull back* if the ceiling lowers.
-            // For now, let's assume highestPermittedState is usually only increasing
-            // or fixed for the ViewHolder's lifespan, or managed by external calls.
-            // If the current internal state is higher than the new highestPermittedState,
-            // we should pull it back. This might require emitting events.
+            // When highestPermittedState is explicitly set, ensure the internal registry's
+            // current state does not exceed this new ceiling.
+            // handleLifecycleEvent only moves state forward, so for pulling back,
+            // direct assignment might be needed but consider event dispatch carefully.
+            // For most use cases, highestPermittedState will be used as a cap when
+            // advancing the lifecycle from attach(), not for pulling back mid-state.
             if (internalLifecycleRegistry.currentState > value) {
-                // This is tricky: manually setting currentState would trigger dispatch.
-                // A simpler approach for highestPermittedState is that any manual
-                // state advancement (like through `moveToState` or `onAttachedToWindow`)
-                // would respect this ceiling.
-                // For now, we'll keep it as a simple property, and ensure manual calls to
-                // `moveToState` respect it.
-                // A better approach would be to have a custom `handleLifecycleEvent`
-                // within `AdapterLifecycleRegistry` if it extended `LifecycleRegistry`,
-                // but we decided against that.
-                // Given the current setup, the ceiling is better enforced
-                // by the caller when they manually advance this lifecycle.
+                // If the new highestPermittedState is lower than the current internal state,
+                // we should "pull back". This implies emitting events.
+                // However, directly calling handleLifecycleEvent with a lower state's target
+                // will usually not work if the current state is higher.
+                // A common pattern is to simply ensure 'attach()' caps at this,
+                // and 'detach()' handles moving back.
+                // If a precise "pull back" is needed beyond just detach(), it would involve
+                // more complex logic to emit ON_PAUSE/ON_STOP events as needed.
+                // For now, removing the logic here to avoid misbehavior,
+                // as `handleLifecycleEvent` generally only advances.
             }
         }
 
@@ -76,8 +72,6 @@ class AdapterLifecycleRegistry(
     override fun getCurrentState(): State {
         return internalLifecycleRegistry.currentState
     }
-//    override val currentState: State
-//        get() = internalLifecycleRegistry.currentState
 
     override fun addObserver(observer: LifecycleObserver) {
         internalLifecycleRegistry.addObserver(observer)
@@ -93,14 +87,19 @@ class AdapterLifecycleRegistry(
      * This will also cause the internal lifecycle to follow the parent up to this point.
      */
     fun attach() {
-        // Ensure the internal lifecycle reaches at least STARTED and then RESUMED
-        // but not exceeding its highestPermittedState or parent's current state.
-        val targetState = if (highestPermittedState > parentLifecycle.currentState)
-            parentLifecycle.currentState else highestPermittedState
+        // Determine the actual target state, capped by highestPermittedState and parent's current state.
+        val targetState = minOf(highestPermittedState, parentLifecycle.currentState)
 
-        if (targetState.isAtLeast(State.CREATED)) internalLifecycleRegistry.handleLifecycleEvent(Event.ON_CREATE)
-        if (targetState.isAtLeast(State.STARTED)) internalLifecycleRegistry.handleLifecycleEvent(Event.ON_START)
-        if (targetState.isAtLeast(State.RESUMED)) internalLifecycleRegistry.handleLifecycleEvent(Event.ON_RESUME)
+        // Advance internal lifecycle, ensuring it doesn't go beyond targetState
+        if (internalLifecycleRegistry.currentState < State.CREATED && targetState.isAtLeast(State.CREATED)) {
+            internalLifecycleRegistry.handleLifecycleEvent(Event.ON_CREATE)
+        }
+        if (internalLifecycleRegistry.currentState < State.STARTED && targetState.isAtLeast(State.STARTED)) {
+            internalLifecycleRegistry.handleLifecycleEvent(Event.ON_START)
+        }
+        if (internalLifecycleRegistry.currentState < State.RESUMED && targetState.isAtLeast(State.RESUMED)) {
+            internalLifecycleRegistry.handleLifecycleEvent(Event.ON_RESUME)
+        }
     }
 
     /**
@@ -108,10 +107,16 @@ class AdapterLifecycleRegistry(
      * The internal lifecycle should fall back to a non-active state (e.g., CREATED).
      */
     fun detach() {
-        // Move internal lifecycle back to CREATED state
-        internalLifecycleRegistry.handleLifecycleEvent(Event.ON_PAUSE)
-        internalLifecycleRegistry.handleLifecycleEvent(Event.ON_STOP)
-        // Do not destroy here, as the ViewHolder might be recycled and re-attached
+        // Move internal lifecycle back to CREATED state by emitting pause and stop events.
+        // Order matters for proper event dispatch (ON_PAUSE before ON_STOP).
+        if (internalLifecycleRegistry.currentState.isAtLeast(State.RESUMED)) {
+            internalLifecycleRegistry.handleLifecycleEvent(Event.ON_PAUSE)
+        }
+        if (internalLifecycleRegistry.currentState.isAtLeast(State.STARTED)) {
+            internalLifecycleRegistry.handleLifecycleEvent(Event.ON_STOP)
+        }
+        // Do not destroy here, as the ViewHolder might be recycled and re-attached quickly
+        // If the owner is truly destroyed, destroy() should be called.
     }
 
     /**
@@ -119,9 +124,17 @@ class AdapterLifecycleRegistry(
      * This will destroy the internal lifecycle.
      */
     fun destroy() {
-        ignoreParent() // Stop observing the parent
-        internalLifecycleRegistry.handleLifecycleEvent(Lifecycle.Event.ON_DESTROY)
-        highestPermittedState = State.DESTROYED // Mark as destroyed
+        ignoreParent() // Stop observing the parent to prevent leaks
+        // Ensure all necessary down events are dispatched before destroying
+        if (internalLifecycleRegistry.currentState.isAtLeast(State.RESUMED)) {
+            internalLifecycleRegistry.handleLifecycleEvent(Event.ON_PAUSE)
+        }
+        if (internalLifecycleRegistry.currentState.isAtLeast(State.STARTED)) {
+            internalLifecycleRegistry.handleLifecycleEvent(Event.ON_STOP)
+        }
+        // Finally, destroy the lifecycle
+        internalLifecycleRegistry.handleLifecycleEvent(Event.ON_DESTROY)
+        highestPermittedState = State.DESTROYED // Mark as destroyed for future checks
     }
 
     private fun observeParent() {
